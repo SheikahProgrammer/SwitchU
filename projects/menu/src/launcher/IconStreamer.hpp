@@ -116,7 +116,7 @@ private:
 
     static constexpr int kPageCacheRadius = 4;
     static constexpr int kGridPageCacheRadius = 1;
-    static constexpr int kIconSize        = 160;
+    static constexpr int kIconSize        = 320;
     static constexpr int kUploadsPerFrame = 1;
     static constexpr int kMaxPendingDecodes = 4;
     static constexpr std::uint64_t kGpuImageReserve = 4u * 1024u * 1024u;

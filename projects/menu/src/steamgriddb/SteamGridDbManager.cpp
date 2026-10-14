@@ -17,7 +17,7 @@
 namespace {
 
 constexpr const char* kApiBase = "https://www.steamgriddb.com/api/v2";
-constexpr int kMatcherVersion = 3; // v3 always matches against the cached English title.
+constexpr int kMatcherVersion = 4; // v4 adds UTF-8 diacritic folding, balanced token coverage, and query decoding.
 
 std::string titleDirectory(std::uint64_t titleId) {
     char id[17]{};
@@ -41,22 +41,76 @@ std::string percentEncode(const std::string& value) {
     return out;
 }
 
-std::string normalized(std::string value) {
+std::string cleanQuery(const std::string& value) {
     std::string out;
     out.reserve(value.size());
-    for (unsigned char c : value) {
-        if (std::isalnum(c))
+    for (std::size_t i = 0; i < value.size(); ++i) {
+        if (value[i] == '+') {
+            out.push_back(' ');
+        } else if (value[i] == '%' && i + 2 < value.size() && std::isxdigit(value[i + 1]) && std::isxdigit(value[i + 2])) {
+            int h = std::stoi(value.substr(i + 1, 2), nullptr, 16);
+            out.push_back(static_cast<char>(h));
+            i += 2;
+        } else {
+            out.push_back(value[i]);
+        }
+    }
+    return out;
+}
+
+std::string foldUtf8(std::string_view input) {
+    std::string out;
+    out.reserve(input.size());
+    for (std::size_t i = 0; i < input.size(); ++i) {
+        unsigned char c = static_cast<unsigned char>(input[i]);
+        if (c < 0x80) {
             out.push_back(static_cast<char>(std::tolower(c)));
+        } else if (c == 0xC3 && i + 1 < input.size()) {
+            unsigned char c2 = static_cast<unsigned char>(input[++i]);
+            if ((c2 >= 0x80 && c2 <= 0x85) || (c2 >= 0xA0 && c2 <= 0xA5)) out.push_back('a');
+            else if (c2 == 0x87 || c2 == 0xA7) out.push_back('c');
+            else if ((c2 >= 0x88 && c2 <= 0x8B) || (c2 >= 0xA8 && c2 <= 0xAB)) out.push_back('e');
+            else if ((c2 >= 0x8C && c2 <= 0x8F) || (c2 >= 0xAC && c2 <= 0xAF)) out.push_back('i');
+            else if (c2 == 0x91 || c2 == 0xB1) out.push_back('n');
+            else if ((c2 >= 0x92 && c2 <= 0x96) || c2 == 0x98 || (c2 >= 0xB2 && c2 <= 0xB6) || c2 == 0xB8) out.push_back('o');
+            else if ((c2 >= 0x99 && c2 <= 0x9C) || (c2 >= 0xB9 && c2 <= 0xBC)) out.push_back('u');
+            else if (c2 == 0x9D || c2 == 0xBD || c2 == 0xBF) out.push_back('y');
+            else if (c2 == 0x86 || c2 == 0xA6) out.append("ae");
+            else if (c2 == 0x9F) out.append("ss");
+        } else if (c == 0xC5 && i + 1 < input.size()) {
+            unsigned char c2 = static_cast<unsigned char>(input[++i]);
+            if (c2 >= 0x80 && c2 <= 0x85) out.push_back('a');
+            else if (c2 >= 0x8C && c2 <= 0x91) out.push_back('c');
+            else if (c2 >= 0x92 && c2 <= 0x95) out.push_back('d');
+            else if (c2 >= 0x96 && c2 <= 0x9F) out.push_back('e');
+            else if (c2 >= 0xA8 && c2 <= 0xB3) out.push_back('i');
+            else if ((c2 >= 0x8C && c2 <= 0x91) || (c2 >= 0xAA && c2 <= 0xB3)) out.push_back('o');
+            else if (c2 >= 0xB9 && c2 <= 0xC2) out.push_back('u');
+            else if (c2 >= 0xBE && c2 <= 0xC2) out.push_back('z');
+            else if (c2 >= 0x9A && c2 <= 0xA5) out.push_back('s');
+        }
+    }
+    return out;
+}
+
+std::string normalized(const std::string& value) {
+    const std::string folded = foldUtf8(cleanQuery(value));
+    std::string out;
+    out.reserve(folded.size());
+    for (char c : folded) {
+        if (std::isalnum(static_cast<unsigned char>(c)))
+            out.push_back(c);
     }
     return out;
 }
 
 std::set<std::string> titleTokens(const std::string& value) {
+    const std::string folded = foldUtf8(cleanQuery(value));
     std::set<std::string> tokens;
     std::string token;
-    for (unsigned char c : value) {
-        if (std::isalnum(c)) {
-            token.push_back(static_cast<char>(std::tolower(c)));
+    for (char c : folded) {
+        if (std::isalnum(static_cast<unsigned char>(c))) {
+            token.push_back(c);
         } else if (!token.empty()) {
             tokens.insert(std::move(token));
             token.clear();
@@ -80,9 +134,10 @@ float titleSimilarity(const std::string& requested, const std::string& candidate
     for (const auto& token : aTokens)
         if (bTokens.count(token)) ++intersection;
     const int unionCount = static_cast<int>(aTokens.size() + bTokens.size()) - intersection;
-    const int smallerCount = static_cast<int>(std::min(aTokens.size(), bTokens.size()));
     const float jaccard = unionCount > 0 ? static_cast<float>(intersection) / unionCount : 0.f;
-    const float coverage = smallerCount > 0 ? static_cast<float>(intersection) / smallerCount : 0.f;
+    const float reqCoverage = !aTokens.empty() ? static_cast<float>(intersection) / aTokens.size() : 0.f;
+    const float candCoverage = !bTokens.empty() ? static_cast<float>(intersection) / bTokens.size() : 0.f;
+    const float coverage = reqCoverage * 0.70f + candCoverage * 0.30f;
 
     // Containment helps with harmless edition/subtitle suffixes, but only when
     // the shorter normalized title still represents most of the longer one.

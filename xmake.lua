@@ -1,6 +1,6 @@
 set_project("SwitchU")
 
-add_repositories("switchu-repo .")
+add_repositories("switchu-repo packages")
 add_repositories("switch-repo https://github.com/PoloNX/switch-repo.git")
 
 includes("toolchain/*.lua")

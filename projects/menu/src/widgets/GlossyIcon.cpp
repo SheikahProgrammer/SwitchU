@@ -906,7 +906,37 @@ void GlossyIcon::onContentRender(nxui::Renderer& ren) {
     if (m_entryKind == GridEntryKind::Application && m_widgetRows > 1) {
         const nxui::Rect card = r.shrunk(std::max(8.f, 10.f * s));
         const float contentRadius = std::max(8.f, rad - 5.f);
-        if (m_tex && m_tex->valid()) {
+        if (m_wideGameHero && m_wideGameHero->valid()) {
+            ren.drawTextureSubRounded(
+                m_wideGameHero, centeredCoverSource(*m_wideGameHero, card), card,
+                contentRadius, nxui::Color::white().withAlpha(m_opacity));
+            const nxui::Rect logoArea{card.x + 16.f * s,
+                                      card.y + card.height * 0.60f,
+                                      card.width * 0.65f,
+                                      card.height * 0.30f};
+            if (m_wideGameLogo && m_wideGameLogo->valid()) {
+                const float aspect = static_cast<float>(m_wideGameLogo->width()) /
+                    std::max(1.f, static_cast<float>(m_wideGameLogo->height()));
+                nxui::Rect logoRect = logoArea;
+                if (aspect > logoArea.width / logoArea.height) {
+                    logoRect.height = logoArea.width / aspect;
+                    logoRect.y += (logoArea.height - logoRect.height) * 0.5f;
+                } else {
+                    logoRect.width = logoArea.height * aspect;
+                }
+                ren.drawTexture(m_wideGameLogo, logoRect,
+                                nxui::Color::white().withAlpha(0.98f * m_opacity));
+            } else if (m_font && !m_title.empty()) {
+                const auto measured = m_font->measure(m_title);
+                float textScale = 0.75f * s;
+                if (measured.x > 0.f)
+                    textScale = std::min(textScale, logoArea.width / measured.x);
+                ren.drawText(m_title,
+                    {logoArea.x, logoArea.y + (logoArea.height - measured.y * textScale) * 0.5f},
+                    m_font, nxui::Color::white().withAlpha(0.96f * m_opacity),
+                    textScale);
+            }
+        } else if (m_tex && m_tex->valid()) {
             ren.drawTextureRounded(m_tex, card, contentRadius,
                                    nxui::Color::white().withAlpha(m_opacity));
         } else {

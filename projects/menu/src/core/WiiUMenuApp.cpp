@@ -2232,8 +2232,8 @@ void WiiUMenuApp::syncGameArtworkTextures(std::uint64_t titleId) {
     if (artwork == m_gameArtwork.end()) return;
     for (const auto& icon : m_grid->allIcons()) {
         if (icon && icon->entryKind() == GridEntryKind::Application &&
-            icon->titleId() == titleId && icon->gridSpanColumns() > 1 &&
-            icon->gridSpanRows() == 1) {
+            icon->titleId() == titleId &&
+            (icon->gridSpanColumns() > 1 || icon->gridSpanRows() > 1)) {
             icon->setWideGameTextures(artwork->second.hero.get(),
                                       artwork->second.logo.get());
         }
@@ -2632,7 +2632,7 @@ void WiiUMenuApp::syncWidgetPageAssets() {
         auto* icon = icons[i].get();
         if (!icon || !current[i] ||
             icon->entryKind() != GridEntryKind::Application ||
-            icon->gridSpanColumns() <= 1 || icon->gridSpanRows() != 1)
+            (icon->gridSpanColumns() <= 1 && icon->gridSpanRows() <= 1))
             continue;
         const auto artwork = m_gameArtwork.find(icon->titleId());
         if (artwork != m_gameArtwork.end())
@@ -3504,7 +3504,7 @@ std::shared_ptr<GlossyIcon> WiiUMenuApp::makeIcon(const AppEntry& entry) {
     icon->setGameCardTexture(&m_gameCardTex);
     icon->setNotLaunchable(!entry.isLaunchable());
     icon->setGridSpan(entry.widgetColumns, entry.widgetRows);
-    if (entry.widgetColumns > 1 && entry.widgetRows == 1 &&
+    if ((entry.widgetColumns > 1 || entry.widgetRows > 1) &&
         m_appLayoutMode == AppLayoutMode::Grid) {
         const auto artwork = m_gameArtwork.find(entry.titleId);
         if (artwork != m_gameArtwork.end())
